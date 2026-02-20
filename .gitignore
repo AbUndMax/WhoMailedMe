@@ -1,0 +1,6 @@
+/out
+/resources
+/test
+
+.venv
+*.idea
