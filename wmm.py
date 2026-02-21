@@ -1,3 +1,7 @@
+# Permission is granted to use, copy and modify this software for non-commercial purposes only.
+# Commercial use requires explicit written permission from the author.
+
+
 import pypff
 import re
 import argparse

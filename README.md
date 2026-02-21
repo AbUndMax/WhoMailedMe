@@ -44,3 +44,7 @@ run `python3 wmm.py -h` for help
 ## Known issues:
 - sometimes the transport header differs from the expected format. -> leads to unknown senders / receivers.
 - sometimes transporter header is missing completely.
+
+# Licensing
+Permission is granted to use, copy and modify this software for non-commercial purposes only.
+Commercial use requires explicit written permission from the author.
