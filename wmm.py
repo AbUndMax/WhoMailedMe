@@ -4,8 +4,17 @@ import argparse
 import json
 from tqdm import trange
 
-missed_lines = [] # collects lines which started with "To:" or "From:" but didn't match regex
+missed_log = {}  # collects lines which started with "To:" or "From:" but didn't match regex
 
+
+def update_log(id_str, sender, recipient):
+    """Update `missed_log` for a message id with the final `(sender, recipient)` tuple.
+
+    If an entry for `id_str` exists in `missed_log`, the function adds/overwrites the
+    key `final_tuple` with `(sender, recipient)`.
+    """
+    if log := missed_log.get(id_str):
+        log["final_tuple"] = (sender, recipient)
 
 def parse_transport_header(msg) -> tuple[str, str]:
     """
@@ -39,19 +48,20 @@ def parse_transport_header(msg) -> tuple[str, str]:
     recipient = None
     for line in split:
         if sender and recipient:
+            update_log(id_str, sender, recipient)
             return sender, recipient
 
         if line.startswith("To: "):
             recipient = regex(line)
             if recipient is None:
-                missed_lines.append(line)
+                missed_log[id_str] = {"recipient_missed": line}
             else:
                 recipient = recipient.group(1)
 
         elif line.startswith("From: "):
             sender = regex(line)
             if sender is None:
-                missed_lines.append(line)
+                missed_log[id_str] = {"sender_missed": line}
             else:
                 sender = sender.group(1)
 
@@ -61,10 +71,11 @@ def parse_transport_header(msg) -> tuple[str, str]:
     if recipient is None:
         recipient = "recipient_not_found:" + id_str
 
+    update_log(id_str, sender, recipient)
     return sender, recipient
 
 
-def process_folder(folder, result_dict):
+def process_folder(folder, result_dict, processing_folder, total_n_folders, longest_name_len):
     """
     Processes a given folder of messages to extract communication data and populates
     the provided result dictionary with recipient and sender information. The function
@@ -84,11 +95,15 @@ def process_folder(folder, result_dict):
             }
         }
 
-    :return: Side effect: updates the result_dict parameter with the aggregated data.
+    :return: number of processed folders
+    :Side effect: updates the result_dict parameter with the aggregated data.
     """
 
+    process_msg = f"processing folder {processing_folder:>{len(str(total_n_folders))}}/{total_n_folders} > "
+    process_msg  += folder.name.ljust(longest_name_len + 1)
+
     for i in trange(folder.number_of_sub_messages,
-                    desc="processing folder: " + folder.name):
+                    desc= process_msg):
 
         msg = folder.get_sub_message(i)
         s_date = msg.delivery_time
@@ -110,8 +125,38 @@ def process_folder(folder, result_dict):
         result_dict[recipient][sender]["n_mails"] += 1
         result_dict[recipient][sender]["dates"].append(s_date.isoformat())
 
+    return processing_folder + 1
 
-def iterate_folders(root, result_dict):
+
+def calculate_process_info(root, total_folders_to_process: int = 0, longest_folder_name: int = 0) -> tuple[int, int]:
+    """
+    Calculate the total number of folders to process and the length of the longest folder name.
+
+    This function recursively traverses the folder structure starting from the given root folder.
+    Folders containing messages are counted, and the folder with the longest name is identified. The
+    results include the total number of folders to process and the length of the longest folder name.
+
+    :param root: The root pypff folder from which the traversal begins.
+    :param total_folders_to_process: The initial count of folders with messages, defaulting to 0.
+    :param longest_folder_name: The initial length of the longest folder name, defaulting to 0.
+    :return: A tuple containing the total number of folders to process and the length of the longest
+        folder name.
+    """
+    for sub in root.sub_folders:
+        # Always recurse first so folders with messages deeper down are counted too
+        total_folders_to_process, longest_folder_name = calculate_process_info(
+            sub, total_folders_to_process, longest_folder_name
+        )
+
+        # Count this folder if it has messages
+        if sub.number_of_sub_messages > 0:
+            total_folders_to_process += 1
+            longest_folder_name = max(longest_folder_name, len(sub.name))
+
+    return total_folders_to_process, longest_folder_name
+
+
+def iterate_folders(root, result_dict, total_folders_to_process, longest_folder_name, processing_folder=1):
     """
     Recursively iterates through folders and processes each folder with messages.
 
@@ -119,12 +164,16 @@ def iterate_folders(root, result_dict):
     :param result_dict: A dictionary to store processed information for folders
         with messages. This dictionary is updated by the `process_folder` function
         during traversal.
-    :return: Side effect: updates the result_dict parameter with the aggregated data.
+    :return: number of processed folders
+    :Side effect: updates the result_dict parameter with the aggregated data.
     """
+
     for sub in root.sub_folders:
+        processing_folder = iterate_folders(sub, result_dict, total_folders_to_process, longest_folder_name, processing_folder)
         if sub.number_of_sub_messages > 0:
-            process_folder(sub, result_dict)
-        iterate_folders(sub, result_dict)
+            processing_folder = process_folder(sub, result_dict, processing_folder, total_folders_to_process, longest_folder_name)
+
+    return processing_folder
 
 
 def extract_info(pst_path: str):
@@ -153,7 +202,8 @@ def extract_info(pst_path: str):
     try:
         root = pst.get_root_folder()
         extract_dic = {}
-        iterate_folders(root, extract_dic)
+        total_folders, longest_name = calculate_process_info(root)
+        iterate_folders(root, extract_dic, total_folders, longest_name)
 
     finally:
         pst.close()
@@ -187,6 +237,7 @@ def main():
 
 
     extract = extract_info(args.pst)
+    # print(json.dumps(missed_log, ensure_ascii=False, indent=2, sort_keys=True))
 
     if args.console_out:
         print(json.dumps(extract, ensure_ascii=False, indent=2, sort_keys=True))
