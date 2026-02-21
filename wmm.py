@@ -228,26 +228,65 @@ def save_to_json(extract_dic, output_path: str):
         json.dump(extract_dic, f, ensure_ascii=False, indent=2)
 
 
+def print_simple_output(extract_dic):
+    print()
+    print("----------------------------------------------------------------------------------------------------")
+    print()
+    tab = 8
+    n_mails = " Number of mails:"
+    for recipient, r_info_dic in extract_dic.items():
+        print(">>> Recipient address:", recipient)
+
+        longest_sender_len = 0
+        for sender in r_info_dic.keys():
+            longest_sender_len = max(longest_sender_len, len(sender))
+
+        print("  > Sender addresses:".ljust(tab + longest_sender_len) + "  " + n_mails)
+        for sender, s_info_dic in r_info_dic.items():
+            print(" " * tab + f"{sender:<{longest_sender_len}}   {s_info_dic['n_mails']:^{len(n_mails)}}")
+        print()
+
+
 def main():
     parser = argparse.ArgumentParser(description="Parse a PST and aggregate unique senders per delivered alias.")
     parser.add_argument("pst", help="Path to the .pst file")
+
     parser.add_argument("--json_out", "-jo", help="Write output to JSON file path (e.g. out.json).")
-    parser.add_argument("--console_out", "-co", action="store_true", help="Print pretty JSON output to console.")
+
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("--console_out", "-co",
+                       action="store_true",
+                       help="Print pretty JSON output to console.")
+    group.add_argument("--simple_out", "-so",
+                       action="store_true",
+                       help="Print simple output to console.")
+
+    parser.add_argument("--miss_log", "-lg",
+                        action="store_true",
+                        help="Print an overview of missed recipients or senders.")
 
     args = parser.parse_args()
 
-    if not args.json_out and not args.console_out:
-        parser.error("You must specify at least one output option: --json_out/-jo and/or --console_out/-co")
+    if not (args.json_out or args.console_out or args.simple_out):
+        parser.error("You must specify at least one output option:\n"
+                     "--json_out/-jo\n"
+                     "--console_out/-co\n"
+                     "--simple_out/-so\n")
 
 
     extract = extract_info(args.pst)
-    # print(json.dumps(missed_log, ensure_ascii=False, indent=2, sort_keys=True))
 
     if args.console_out:
         print(json.dumps(extract, ensure_ascii=False, indent=2, sort_keys=True))
 
+    elif args.simple_out:
+        print_simple_output(extract)
+
     if args.json_out:
         save_to_json(extract, args.json_out)
+
+    if args.miss_log:
+        print(json.dumps(missed_log, ensure_ascii=False, indent=2, sort_keys=True))
 
 if __name__ == "__main__":
     main()

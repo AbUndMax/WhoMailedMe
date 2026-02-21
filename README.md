@@ -5,6 +5,8 @@
 A simple script that breaks down the email addresses of senders by recipient email and outputs them
 as JSON in a file and/or in the console.
 
+This is helpful to see which 
+
 ### Features:
 - extract sender email addresses from .PST file
 - number of mails send from each sender
@@ -32,12 +34,15 @@ as JSON in a file and/or in the console.
 ## Usage:
 
 ```
-python wmm.py <path_to_pst_file> [-jo <output_json_file>] [-co]
+python wmm.py <path_to_pst_file> [-jo <output_json_file>] [-co] [-so]
 ```
 
-**At least one of the two output format flags must be specified:**
+**At least one of the three output format flags must be specified:**
 - `-jo` specifies the output JSON file.
 - `-co` prints the JSON to the console.
+- `-so` prints a simple list of sender email addresses to the console.
+
+`-co` and `-so` are mutually exclusive.
 
 run `python3 wmm.py -h` for help
 
