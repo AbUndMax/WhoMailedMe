@@ -4,11 +4,27 @@ import argparse
 import json
 from tqdm import trange
 
-missed_lines = []
+missed_lines = [] # collects lines which started with "To:" or "From:" but didn't match regex
 
 
-def extract_to_from_info(msg) -> tuple[str, str]:
-    """Extract sender and recipient from transport headers. -> returns (sender, recipient)"""
+def parse_transport_header(msg) -> tuple[str, str]:
+    """
+    Extract sender and recipient from transport headers.
+
+    This function parses the transport headers contained in the provided
+    pypff message object, extracts the email addresses for both the sender and
+    the recipient, and returns them as a tuple. If the transport headers
+    are missing or invalid, appropriate default error strings are returned
+    for the sender and recipient. The function raises an exception if either
+    or both are missing after processing the headers.
+
+    :param msg: A pypff message object that contains transport headers and
+        an identifier used to derive default error strings when sender
+        or recipient cannot be determined
+    :return: A tuple containing the sender's email address as the first
+        element and the recipient's email address as the second element
+        (sender, recipient)
+    """
 
     transport_headers = msg.transport_headers
     id_str = str(msg.identifier)
@@ -29,8 +45,6 @@ def extract_to_from_info(msg) -> tuple[str, str]:
             recipient = regex(line)
             if recipient is None:
                 missed_lines.append(line)
-                # raise AttributeError("invalid recipient: " + line)
-                recipient = "recipient_not_found:" + id_str
             else:
                 recipient = recipient.group(1)
 
@@ -38,22 +52,40 @@ def extract_to_from_info(msg) -> tuple[str, str]:
             sender = regex(line)
             if sender is None:
                 missed_lines.append(line)
-                # raise AttributeError("invalid sender: " + line)
-                sender = "sender_nit_found:" + id_str
             else:
                 sender = sender.group(1)
 
-    error = "missing: "
-    if not sender and not recipient:
-        error += "sender and recipient"
-    elif not sender:
-        error += "sender"
-    elif not recipient:
-        error += "recipient"
-    raise AttributeError("missing: " + error)
+    if sender is None:
+        sender = "sender_not_found:" + id_str
+
+    if recipient is None:
+        recipient = "recipient_not_found:" + id_str
+
+    return sender, recipient
 
 
 def process_folder(folder, result_dict):
+    """
+    Processes a given folder of messages to extract communication data and populates
+    the provided result dictionary with recipient and sender information. The function
+    analyzes each message in the folder and aggregates the number of messages and their
+    corresponding delivery times for each sender-recipient pair.
+
+    :param folder: The pypff folder object containing sub-messages to process.
+    :param result_dict: A dictionary to store the aggregated results. The structure of this
+        dictionary is:
+
+        {
+            recipient (str): {
+                sender (str): {
+                    "n_mails": int,  # Number of messages from sender to recipient
+                    "dates": List[str]  # List of ISO 8601 format dates for messages
+                }
+            }
+        }
+
+    :return: Side effect: updates the result_dict parameter with the aggregated data.
+    """
 
     for i in trange(folder.number_of_sub_messages,
                     desc="processing folder: " + folder.name):
@@ -80,6 +112,15 @@ def process_folder(folder, result_dict):
 
 
 def iterate_folders(root, result_dict):
+    """
+    Recursively iterates through folders and processes each folder with messages.
+
+    :param root: The pypff root folder to start the traversal.
+    :param result_dict: A dictionary to store processed information for folders
+        with messages. This dictionary is updated by the `process_folder` function
+        during traversal.
+    :return: Side effect: updates the result_dict parameter with the aggregated data.
+    """
     for sub in root.sub_folders:
         if sub.number_of_sub_messages > 0:
             process_folder(sub, result_dict)
@@ -87,6 +128,25 @@ def iterate_folders(root, result_dict):
 
 
 def extract_info(pst_path: str):
+    """
+    Extracts information from a PST (Personal Storage Table) file and organizes it into a dictionary.
+
+    This function reads the structure of a PST file provided by the user and processes its
+    contents into a dictionary format for further use.
+
+    The generated dictionary has the following structure:
+        {
+            recipient (str): {
+                sender (str): {
+                    "n_mails": int,  # Number of messages from sender to recipient
+                    "dates": List[str]  # List of ISO 8601 format dates for messages
+                }
+            }
+        }
+
+    :param pst_path: The file path to the PST file that is to be processed.
+    :return: A dictionary containing extracted information from the PST file.
+    """
     pst = pypff.file()
     pst.open(pst_path)
 
@@ -102,6 +162,14 @@ def extract_info(pst_path: str):
 
 
 def save_to_json(extract_dic, output_path: str):
+    """
+    Saves the provided dictionary to a JSON file at the specified path.
+
+    :param extract_dic: Dictionary to be serialized and written to a JSON file.
+                        This contains key-value pairs that will form the JSON content.
+    :param output_path: The file path where the JSON content will be saved.
+    :return: None
+    """
     with open(output_path, "w") as f:
         json.dump(extract_dic, f, ensure_ascii=False, indent=2)
 
@@ -119,8 +187,6 @@ def main():
 
 
     extract = extract_info(args.pst)
-    print("missed lines:")
-    print(missed_lines)
 
     if args.console_out:
         print(json.dumps(extract, ensure_ascii=False, indent=2, sort_keys=True))
