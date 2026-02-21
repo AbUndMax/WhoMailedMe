@@ -93,7 +93,7 @@ def process_folder(folder, result_dict):
         msg = folder.get_sub_message(i)
         s_date = msg.delivery_time
 
-        sender, recipient = extract_to_from_info(msg)
+        sender, recipient = parse_transport_header(msg)
 
         # recipient level creation if not exist
         if recipient not in result_dict:
